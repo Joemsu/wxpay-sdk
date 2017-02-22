@@ -1,27 +1,29 @@
 package com.github.cuter44.wxpay.reqs;
 
-import java.util.Properties;
-import java.util.List;
-import java.util.Map;
-import java.net.URL;
-import java.io.UnsupportedEncodingException;
-import java.io.IOException;
-import java.io.ByteArrayOutputStream;
-import java.io.InputStream;
-import java.net.URISyntaxException;
-import javax.net.ssl.SSLContext;
-
-import com.github.cuter44.nyafx.crypto.*;
-import com.github.cuter44.nyafx.text.*;
-import org.apache.http.*;
-import org.apache.http.entity.*;
-import org.apache.http.impl.client.*;
-//import org.apache.http.client.*;
-import org.apache.http.client.methods.*;
-
+import com.github.cuter44.nyafx.crypto.CryptoBase;
+import com.github.cuter44.nyafx.text.URLBuilder;
 import com.github.cuter44.wxpay.WxpayException;
 import com.github.cuter44.wxpay.WxpayProtocolException;
 import com.github.cuter44.wxpay.resps.WxpayResponseBase;
+import org.apache.http.HttpEntity;
+import org.apache.http.HttpResponse;
+import org.apache.http.client.methods.CloseableHttpResponse;
+import org.apache.http.client.methods.HttpPost;
+import org.apache.http.entity.ContentType;
+import org.apache.http.entity.StringEntity;
+import org.apache.http.impl.client.CloseableHttpClient;
+import org.apache.http.impl.client.HttpClientBuilder;
+
+import javax.net.ssl.SSLContext;
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.UnsupportedEncodingException;
+import java.util.List;
+import java.util.Map;
+import java.util.Properties;
+
+//import org.apache.http.client.*;
 
 /**
  * @author galin<cuter44@foxmail.com>
@@ -159,6 +161,46 @@ public abstract class WxpayRequestBase
     }
 
     /**
+     *
+     * @param paramNames 针对小程序的统一下单支付请求
+     */
+    protected String signForRequestPayment(List<String> paramNames)
+            throws UnsupportedEncodingException, UnsupportedOperationException, IllegalStateException
+    {
+        String key = this.getProperty(KEY_KEY);
+
+        String sign = this.signMD5ForRequestPayment(paramNames, key);
+
+        this.setProperty(KEY_SIGN, sign);
+
+        return(sign);
+    }
+
+    /**
+     * caculate sign according to wxp-spec
+     * @exception UnsupportedEncodingException if your runtime does not support utf-8.
+     */
+    protected String signMD5ForRequestPayment(List<String> paramNames, String key)
+            throws UnsupportedEncodingException
+    {
+        if (key == null)
+            throw(new IllegalArgumentException("KEY required to sign, but not found."));
+
+        StringBuilder sb = new StringBuilder()
+                .append(this.toQueryStringForRequestPayment(paramNames))
+                .append("&key="+key);
+
+        String sign = this.crypto.byteToHex(
+                this.crypto.MD5Digest(
+                        sb.toString().getBytes("utf-8")
+                ));
+
+        sign = sign.toUpperCase();
+
+        return(sign);
+    }
+
+    /**
      * caculate sign according to wxp-spec
      * @exception UnsupportedEncodingException if your runtime does not support utf-8.
      */
@@ -180,6 +222,33 @@ public abstract class WxpayRequestBase
         sign = sign.toUpperCase();
 
         return(sign);
+    }
+
+    /** Provide query string to sign().
+     * This method do not parse sign, thus toURL() must not invoke this method.
+     */
+    protected String toQueryStringForRequestPayment(List<String> paramNames)
+    {
+        URLBuilder ub = new URLBuilder();
+
+        for (String key:paramNames)
+        {
+            if (KEY_SIGN.equals(key))
+                continue;
+            String value;
+            if(key.equals("appId"))
+                value = this.getProperty("appid");
+            else if(key.equals("nonceStr"))
+                value = this.getProperty("nonce_str");
+            else
+                value = this.getProperty(key);
+            if (value == null || value.isEmpty())
+                continue;
+
+            ub.appendParam(key, value);
+        }
+
+        return(ub.toString());
     }
 
     /** Provide query string to sign().
